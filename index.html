@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Dancing Cat ♡</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#020611}
+body{display:grid;place-items:center;font-family:system-ui,sans-serif}
+canvas{display:block;width:100vw;height:100vh;touch-action:manipulation}
+.hint{display:none}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="ASCII котик танцует, увеличивается и превращается в звёздное сердце"></canvas>
+
+<script>
+(() => {
+const canvas=document.getElementById('scene'), ctx=canvas.getContext('2d');
+let w=0,h=0,dpr=1, cols=0, rows=0, cellW=8, cellH=13, start=performance.now();
+const ramp=" .,:;irsXA253hMHGS#9B&@";
+const stars=Array.from({length:170},()=>({x:Math.random(),y:Math.random(),z:.25+Math.random(),p:Math.random()*6.28,s:.5+Math.random()*1.8}));
+function resize(){
+ dpr=Math.min(devicePixelRatio||1,2); w=innerWidth;h=innerHeight;
+ canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+ cellW=Math.max(5.8,Math.min(9,w/100));cellH=cellW*1.55;
+ cols=Math.floor(w/cellW);rows=Math.floor(h/cellH);
+}
+addEventListener('resize',resize);resize();
+const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)};
+function ell(x,y,rx,ry,base,t,glow=0){
+ let dx=(x/rx),dy=y/ry,r=dx*dx+dy*dy;
+ if(r>1.22)return null;
+ let z=Math.sqrt(Math.max(0,1-r)),len=Math.hypot(dx,dy,z)||1;
+ let nx=dx/len,ny=dy/len,nz=z/len;
+ let light=Math.max(.12,Math.min(1,.34+(-.42*nx-.62*ny+.66*nz)*.7));
+ let spec=Math.pow(Math.max(0,.45*nx+.55*ny+.7*nz-.72),16)*.65;
+ let edge=Math.max(0,1-r);
+ let shine=Math.exp(-((dx+.42)**2+(dy+.58)**2)*7);
+ return {a:Math.min(1,edge*6),c:[base[0]*light+spec*.72+shine*.16,base[1]*light+spec*.9+shine*.2,base[2]*light+spec+shine*.25],z,glow};
+}
+function catPixel(nx,ny,t){
+ const bob=Math.sin(t*5)*.045, sway=Math.sin(t*2.5)*.05, leg=Math.sin(t*5)*.15, tail=Math.sin(t*3.2)*.24;
+ // normalized cat model; composite soft 3D rounded forms
+ let out=null;
+ const shapes=[];
+ // curved tail made of several overlapping luminous spheres
+ for(let i=0;i<8;i++){let q=i/7;shapes.push([-.43-.2*q+.1*Math.sin(tail+q*2.5),.15-.42*q+.09*Math.sin(q*Math.PI),.11,.085,[.18,.53,.9]])}
+ // feet and legs dance in opposite rhythm
+ for(let side of [-1,1]){
+  shapes.push([side*.2+side*leg*.16,.38,.105,.21,[.22,.6,.94]]);
+  shapes.push([side*.22+side*leg*.16,.57,.14,.08,[.45,.77,1]]);
+ }
+ shapes.push([0,.2,.34,.37,[.22,.61,.93]], [0,-.02,.22,.19,[.42,.76,1]]);
+ // ears
+ for(let side of [-1,1]){shapes.push([side*.22,-.39,.115,.18,[.17,.48,.82]],[side*.22,-.38,.06,.105,[.94,.48,.72]])}
+ shapes.push([0,-.29,.31,.3,[.36,.72,1]]);
+ for(const s of shapes){
+  let q=ell(nx-s[0]-sway,ny-s[1]-bob,s[2],s[3],s[4],t);
+  if(q&&(!out||q.z>out.z))out=q;
+ }
+ // eye sockets, bright eyes and little nose, overlaid as details
+ let details=[];
+ for(let side of [-1,1]){
+  let ex=side*.115, blink=(t%5.1>4.86)?.12:1;
+  details.push([ex,-.315,.046,.058*blink,[.01,.035,.1]]);
+  details.push([ex-.012,-.337,.016,.02,[.92,.98,1]]);
+  details.push([side*.205,-.245,.06,.032,[.95,.46,.72]]);
+ }
+ details.push([0,-.245,.03,.023,[.08,.17,.32]]);
+ for(const s of details){let q=ell(nx-s[0]-sway,ny-s[1]-bob,s[2],s[3],s[4],t);if(q&&(!out||q.z>out.z))out=q}
+ return out;
+}
+function heartShape(x,y){
+ // familiar parametric heart, in a normalized coordinate system
+ const X=x,Y=-y;
+ return (X*X+Y*Y-1)**3-X*X*Y**3;
+}
+function draw(time){
+ const t=(time-start)/1000;
+ ctx.fillStyle='#020611';ctx.fillRect(0,0,w,h);
+ const catPhase=13,zoomPhase=18,heartPhase=17;
+ let mode=t<catPhase?'cat':t<zoomPhase?'zoom':'heart';
+ let zoom=t<catPhase?.82+.12*smooth(t/2)+.025*Math.sin(t*2.8):.94+1.35*smooth((t-catPhase)/(zoomPhase-catPhase));
+ const heartMix=mode==='heart'?smooth((t-heartPhase)/3):0;
+ // Starfield depth movement, accelerated during final transition
+ for(const s of stars){
+  s.y+=(.00025+s.z*.00065)*(1+heartMix*3);
+  if(s.y>1.05){s.y=-.04;s.x=Math.random()}
+  let tw=.4+.6*Math.abs(Math.sin(t*2+s.p));
+  ctx.globalAlpha=tw*(.3+s.z*.7);
+  ctx.fillStyle=heartMix>.2?'#a9dfff':'#719acb';
+  ctx.font=`${Math.max(8,s.s*cellW*1.4)}px monospace`;
+  ctx.fillText(s.z>.8?'✦':'.',s.x*w,s.y*h);
+ }
+ ctx.globalAlpha=1;
+ // draw rasterized ASCII scene with luminous colored glyphs
+ const cw=w/cols,ch=h/rows,scale=Math.min(w/720,h/520);
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ for(let j=0;j<rows;j++){
+  const ny=(j/rows-.5)*2.0;
+  for(let i=0;i<cols;i++){
+   const nx=(i/cols-.5)*2.0;
+   let brightness=0,color=[.1,.3,.5];
+   if(mode!=='heart'){
+    const px=nx/zoom,py=ny/zoom;
+    const q=catPixel(px,py,t);
+    if(q){brightness=Math.min(1,q.a*(.5+q.z*.7));color=q.c}
+    // floating music notes during the dancing part
+    if(t<catPhase){
+     for(let n=0;n<4;n++){
+      let mx=(n%2?1:-1)*(.57+.06*Math.sin(t*3+n)),my=-.28+n*.17+.04*Math.sin(t*4+n);
+      let d=Math.hypot(px-mx,py-my);
+      if(d<.035){brightness=Math.max(brightness,(1-d/.035)*.85);color=[.6,.55,1]}
+     }
+    }
+   }
+   // dissolve cat into a softly glowing heart contour with stars in its body
+   if(heartMix>0){
+    let hx=nx/(.88*(1+heartMix*.10)),hy=ny/(.92*(1+heartMix*.10));
+    let f=heartShape(hx,hy+.10),dist=Math.abs(f);
+    let contour=Math.exp(-dist*19);
+    let inside=f<0?Math.max(0,1-Math.sqrt(Math.abs(f))*.34):0;
+    let neb=(.48+.28*Math.sin(hx*18+t*.7)*Math.sin(hy*16-t*.5)+.24*Math.sin(hx*37+hy*29+t));
+    let hb=Math.max(contour*1.18,inside*neb*1.22);
+    if(hb>brightness){brightness=hb;color=[.22+.38*neb,.50+.42*neb,1.0]}
+   }
+   // subtle vignette and brightness-to-character conversion
+   brightness*=Math.max(.28,1-.38*(nx*nx+ny*ny));
+   if(brightness>.035){
+    const index=Math.min(ramp.length-1,Math.floor(brightness*(ramp.length-1)));
+    const chGlyph=ramp[index];
+    const rgb=color.map(v=>Math.round(Math.min(1,v)*255));
+    ctx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    ctx.globalAlpha=Math.min(1,.3+brightness*1.2);
+    ctx.font=`bold ${Math.max(7,cellH*1.04)}px Consolas,monospace`;
+    ctx.fillText(chGlyph,(i+.5)*cw,(j+.5)*ch);
+   }
+  }
+ }
+ ctx.globalAlpha=1;
+ // floating sparkling heart particles in the finale
+ if(mode==='heart'){
+  for(let k=0;k<150;k++){
+   const a=k*2.399+t*.14,rad=.3+.55*((k%13)/13);
+   const xx=16*Math.pow(Math.sin(a),3), yy=-(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a));
+   let x=w/2+xx*w*.022*rad,y=h/2+yy*h*.022*rad;
+   ctx.fillStyle=k%3?'#b4e6ff':'#f0caff';ctx.globalAlpha=.45+.55*Math.abs(Math.sin(t*3+k));
+   ctx.font=`${9+(k%3)*3}px monospace`;ctx.fillText(k%4?'✦':'·',x,y);
+  }
+  ctx.globalAlpha=1;
+ }
+ requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
